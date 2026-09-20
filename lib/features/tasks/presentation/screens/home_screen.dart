@@ -5,19 +5,22 @@
 // This is the Home screen of the Interval Reminder app.
 // It manages:
 // 1. In-memory and persistent storage of reminders via ReminderRepository.
-// 2. Scheduling, updating, and cancelling device notifications via
-//    NotificationService and ReminderScheduler.
-// 3. Navigation to AddReminderScreen for both CREATING and EDITING reminders.
-// 4. Displaying either an empty state or a scrollable list of ReminderCards.
+// 2. Lifecycle observation (WidgetsBindingObserver) to check permissions and
+//    synchronize notifications when the app returns to the foreground.
+// 3. UI feedback if notification permissions are denied.
+// 4. User actions: Add, Edit, Toggle, and Delete reminders.
 //
-// NOTIFICATION RESCHEDULING DURING EDITING:
-// When a user edits a reminder (e.g. changing interval from 1 hour to 2 hours):
-// 1. We cancel the old scheduled notification using the reminder's stable ID.
-// 2. We update the in-memory list and local storage.
-// 3. If the reminder is enabled, we calculate the NEW next occurrence and
-//    schedule the new notification with the operating system.
-// Cancelling before rescheduling guarantees that no duplicate or orphaned
-// alarms remain active in Android AlarmManager!
+// APP LIFECYCLE VS OPERATING SYSTEM NOTIFICATION SCHEDULING:
+// - Flutter App Lifecycle: Governs the state of the Flutter Dart VM when the user
+//   opens, minimizes, or closes the app (resumed, paused, detached).
+// - OS Notification Scheduler: Android AlarmManager & iOS Notification Center run
+//   independently of Flutter. Even when the app is completely CLOSED or killed,
+//   the operating system kernel wakes up and displays the notification!
+//
+// WHY WE DO NOT USE Timer.periodic():
+// A Dart Timer only runs while the Flutter app is alive in the foreground.
+// Android terminates background apps to conserve battery, which immediately kills
+// any active Dart timers. Scheduled OS notifications are the only reliable way.
 // ============================================================================
 
 import 'package:flutter/material.dart';
@@ -25,6 +28,7 @@ import '../../../../core/services/notification_service.dart';
 import '../../../reminders/domain/entities/reminder.dart';
 import '../../../reminders/domain/repositories/reminder_repository.dart';
 import '../../../reminders/domain/services/reminder_scheduler.dart';
+import '../../../reminders/domain/services/reminder_sync_service.dart';
 import '../../../reminders/data/repositories/reminder_repository_impl.dart';
 import '../../../reminders/presentation/screens/add_reminder_screen.dart';
 import '../../../reminders/presentation/widgets/reminder_card.dart';
@@ -36,62 +40,92 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+// WidgetsBindingObserver allows this State object to listen for operating system
+// lifecycle events (e.g. app minimized, app resumed to foreground).
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------------
   // SERVICES
   // ---------------------------------------------------------------------------
   final ReminderRepository _repository = ReminderRepositoryImpl();
   final NotificationService _notificationService = NotificationService();
+  late final ReminderSyncService _syncService;
 
-  // In-memory list of reminders currently loaded in the UI
+  // In-memory list of reminders currently displayed
   final List<Reminder> _reminders = [];
 
-  // Loading state flag to display CircularProgressIndicator
+  // Loading state flag to display CircularProgressIndicator during initial read
   bool _isLoading = true;
 
+  // Tracks whether notification permission is currently granted by the user
+  bool _hasNotificationPermission = true;
+
   // ---------------------------------------------------------------------------
-  // LIFECYCLE: initState()
+  // LIFECYCLE: initState & dispose
   // ---------------------------------------------------------------------------
   @override
   void initState() {
     super.initState();
+    // Register this State object as a lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
+
+    _syncService = ReminderSyncService(
+      notificationService: _notificationService,
+    );
+
     _initializeAndLoad();
   }
 
+  @override
+  void dispose() {
+    // Unregister observer to prevent memory leaks when widget is destroyed
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   // ---------------------------------------------------------------------------
-  // INITIALIZATION: RESTORE & SCHEDULE NOTIFICATIONS
+  // APP LIFECYCLE STATE CHANGES
   // ---------------------------------------------------------------------------
+  // WHAT AppLifecycleState MEANS:
+  // - resumed: App is visible and responding to user input.
+  // - inactive: App is in an inactive state (e.g. phone call, system dialog).
+  // - paused: App is running in the background (user pressed Home button).
+  // - detached: App is detached from Flutter host engine (closing).
+  // - hidden: App is minimized/hidden.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // When the user returns to the app from the background or phone settings:
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('HomeScreen: App resumed. Checking permissions and resyncing...');
+      _checkPermissionsAndResync();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // INITIALIZATION: STARTUP FLOW
+  // ---------------------------------------------------------------------------
+  // STARTUP FLOW:
+  // 1. Initialize NotificationService (channels, timezone DB).
+  // 2. Request runtime notification permissions.
+  // 3. Load saved reminders from SharedPreferences.
+  // 4. Synchronize all enabled reminders via ReminderSyncService.
+  // 5. Update UI state.
   Future<void> _initializeAndLoad() async {
     try {
-      // 1. Initialize notification channel & timezone database
       await _notificationService.initialize();
+      final bool permissionGranted =
+          await _notificationService.requestPermissions();
 
-      // 2. Request notification permissions (Android 13+ & iOS)
-      await _notificationService.requestPermissions();
-
-      // 3. Load saved reminders from local storage
       final loadedReminders = await _repository.getReminders();
 
-      // 4. Synchronize notifications with the operating system
-      final now = DateTime.now();
-      for (final reminder in loadedReminders) {
-        if (reminder.isEnabled) {
-          final nextOccurrence =
-              ReminderScheduler.calculateNextOccurrence(reminder, now);
-
-          await _notificationService.scheduleReminder(
-            reminder: reminder,
-            scheduledTime: nextOccurrence,
-          );
-        } else {
-          // If the reminder is disabled, make sure no old notification is pending
-          await _notificationService.cancelReminder(reminder.id);
-        }
-      }
+      // Synchronize alarms with the operating system
+      await _syncService.syncAllReminders(loadedReminders);
 
       if (!mounted) return;
 
       setState(() {
+        _hasNotificationPermission = permissionGranted;
         _reminders.clear();
         _reminders.addAll(loadedReminders);
         _isLoading = false;
@@ -106,14 +140,36 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // SAVE REMINDERS HELPER
-  // ---------------------------------------------------------------------------
+  // Checks permission and synchronizes when returning from device settings
+  Future<void> _checkPermissionsAndResync() async {
+    final bool permissionGranted =
+        await _notificationService.areNotificationsGranted();
+
+    if (mounted) {
+      setState(() {
+        _hasNotificationPermission = permissionGranted;
+      });
+    }
+
+    if (permissionGranted) {
+      await _syncService.syncAllReminders(_reminders);
+    }
+  }
+
+  // Centralized helper to save the current _reminders list to SharedPreferences
   Future<void> _saveReminders() async {
     try {
       await _repository.saveReminders(_reminders);
     } catch (e) {
-      debugPrint('HomeScreen: Error saving reminders: $e');
+      debugPrint('HomeScreen: Error saving reminders to storage: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to save reminders. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -121,7 +177,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 1. CREATE REMINDER
   // ---------------------------------------------------------------------------
   Future<void> _navigateToAddReminder() async {
-    // Opens AddReminderScreen in CREATE mode (reminderToEdit is null)
     final Reminder? reminder = await Navigator.push<Reminder>(
       context,
       MaterialPageRoute(
@@ -134,20 +189,34 @@ class _HomeScreenState extends State<HomeScreen> {
         _reminders.add(reminder);
       });
 
-      // Persist to storage
+      // 1. Persist to storage
       await _saveReminders();
 
-      // Schedule notification with OS if enabled
+      // 2. Schedule notification if enabled
       if (reminder.isEnabled) {
-        final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
-          reminder,
-          DateTime.now(),
-        );
+        try {
+          final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
+            reminder,
+            DateTime.now(),
+          );
 
-        await _notificationService.scheduleReminder(
-          reminder: reminder,
-          scheduledTime: nextOccurrence,
-        );
+          await _notificationService.scheduleReminder(
+            reminder: reminder,
+            scheduledTime: nextOccurrence,
+          );
+        } catch (e) {
+          debugPrint('HomeScreen: Failed to schedule reminder ${reminder.id}: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Reminder was saved, but notification scheduling failed. Please check notification permissions.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
       }
     }
   }
@@ -155,10 +224,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // ---------------------------------------------------------------------------
   // 2. EDIT REMINDER
   // ---------------------------------------------------------------------------
-  // WHAT THIS METHOD DOES:
-  // Opens AddReminderScreen in EDIT mode by passing the existing reminder.
-  // When the user saves their changes, it cancels the old notification,
-  // updates the list, persists to disk, and reschedules if enabled.
   Future<void> _navigateToEditReminder(int index) async {
     final oldReminder = _reminders[index];
 
@@ -172,29 +237,42 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (updatedReminder != null) {
-      // 1. CANCEL THE OLD NOTIFICATION:
-      // The time or interval may have changed, so cancel the previous alarm first.
+      // 1. Cancel the old notification first
       await _notificationService.cancelReminder(oldReminder.id);
 
-      // 2. UPDATE IN-MEMORY LIST:
+      // 2. Update list in state
       setState(() {
         _reminders[index] = updatedReminder;
       });
 
-      // 3. PERSIST UPDATED LIST TO STORAGE:
+      // 3. Persist updated list to storage
       await _saveReminders();
 
-      // 4. RESCHEDULE IF ENABLED:
+      // 4. Reschedule if enabled
       if (updatedReminder.isEnabled) {
-        final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
-          updatedReminder,
-          DateTime.now(),
-        );
+        try {
+          final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
+            updatedReminder,
+            DateTime.now(),
+          );
 
-        await _notificationService.scheduleReminder(
-          reminder: updatedReminder,
-          scheduledTime: nextOccurrence,
-        );
+          await _notificationService.scheduleReminder(
+            reminder: updatedReminder,
+            scheduledTime: nextOccurrence,
+          );
+        } catch (e) {
+          debugPrint('HomeScreen: Failed to reschedule reminder ${updatedReminder.id}: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Reminder was updated, but notification scheduling failed. Please check notification permissions.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
       }
     }
   }
@@ -209,23 +287,23 @@ class _HomeScreenState extends State<HomeScreen> {
       _reminders[index] = updatedReminder;
     });
 
-    // 1. Update storage
     await _saveReminders();
 
-    // 2. Update OS scheduled notifications
     if (isEnabled) {
-      // Calculate when the next reminder should occur and schedule it
-      final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
-        updatedReminder,
-        DateTime.now(),
-      );
+      try {
+        final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
+          updatedReminder,
+          DateTime.now(),
+        );
 
-      await _notificationService.scheduleReminder(
-        reminder: updatedReminder,
-        scheduledTime: nextOccurrence,
-      );
+        await _notificationService.scheduleReminder(
+          reminder: updatedReminder,
+          scheduledTime: nextOccurrence,
+        );
+      } catch (e) {
+        debugPrint('HomeScreen: Error enabling reminder notification: $e');
+      }
     } else {
-      // Cancel the pending notification from the OS queue
       await _notificationService.cancelReminder(updatedReminder.id);
     }
   }
@@ -236,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _deleteReminder(int index) async {
     final reminderToDelete = _reminders[index];
 
-    // 1. Cancel the notification from the OS queue first
+    // 1. Cancel the notification from the OS queue
     await _notificationService.cancelReminder(reminderToDelete.id);
 
     // 2. Remove from in-memory list
@@ -244,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _reminders.removeAt(index);
     });
 
-    // 3. Persist the updated list to storage
+    // 3. Persist updated list to storage
     await _saveReminders();
   }
 
@@ -258,11 +336,22 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Interval Reminder'),
       ),
 
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _reminders.isEmpty
-              ? _buildEmptyState()
-              : _buildRemindersList(),
+      body: Column(
+        children: [
+          // USER-FRIENDLY PERMISSION WARNING BANNER:
+          // If the user denied notification permission, display a non-intrusive warning
+          if (!_hasNotificationPermission) _buildPermissionWarningBanner(),
+
+          // Main body content
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _reminders.isEmpty
+                    ? _buildEmptyState()
+                    : _buildRemindersList(),
+          ),
+        ],
+      ),
 
       floatingActionButton: (!_isLoading && _reminders.isNotEmpty)
           ? FloatingActionButton(
@@ -271,6 +360,32 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Icon(Icons.add),
             )
           : null,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // WIDGET BUILDER: PERMISSION WARNING BANNER
+  // ---------------------------------------------------------------------------
+  Widget _buildPermissionWarningBanner() {
+    return Container(
+      color: Colors.amber.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Notifications are disabled. Enable notification permission in device settings to receive interval reminders.',
+              style: TextStyle(
+                color: Colors.black87,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
