@@ -15,6 +15,7 @@
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import '../../../reminders/presentation/screens/add_reminder_screen.dart';
 
 // HomeScreen extends StatelessWidget.
 // A StatelessWidget is used when the screen's UI does not need to dynamically
@@ -92,15 +93,21 @@ class HomeScreen extends StatelessWidget {
             // Vertical spacing before the action button
             const SizedBox(height: 24),
 
-            // Placeholder button for adding a reminder
-            // IMPORTANT: This button's callback is intentionally a placeholder.
-            // We are not implementing reminder creation yet in Step 2.
+            // Action button for navigating to the Add Reminder screen
             ElevatedButton.icon(
-              // 'onPressed' defines what happens when the user taps the button.
-              // Passing an empty function () {} keeps the button visually active
-              // while signaling that logic will be connected in an upcoming step.
+              // WHAT Navigator.push() DOES:
+              // Navigator.push() adds a new screen to Flutter's navigation stack.
+              //
+              // WHAT MaterialPageRoute DOES:
+              // MaterialPageRoute is a modal route that creates a platform-adaptive
+              // transition (e.g., slide from right on Android, slide from bottom on iOS).
               onPressed: () {
-                // Placeholder callback - no action taken yet.
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddReminderScreen(),
+                  ),
+                );
               },
               icon: const Icon(Icons.add),
               label: const Text('Add Reminder'),

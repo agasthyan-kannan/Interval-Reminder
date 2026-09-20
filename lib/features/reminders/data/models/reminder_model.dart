@@ -8,7 +8,7 @@
 // into strongly typed objects used inside the data layer.
 //
 // RESPONSIBILITY:
-// This file defines 'ReminderModel', extending or mapping to 'ReminderEntity',
+// This file defines 'ReminderModel', extending or mapping to 'Reminder',
 // adding storage serialization and deserialization.
 //
 // WHAT CODE WILL EVENTUALLY GO HERE:
@@ -26,8 +26,9 @@
 // No serialization or database mappings are implemented yet.
 // ============================================================================
 
-import '../../domain/entities/reminder_entity.dart';
+import '../../domain/entities/reminder.dart';
 
-class ReminderModel extends ReminderEntity {
+class ReminderModel {
   // Placeholder model establishing data layer representation.
+  // In future steps, this will map to and from the Reminder entity.
 }

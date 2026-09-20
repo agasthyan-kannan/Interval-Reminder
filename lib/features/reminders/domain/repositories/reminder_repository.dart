@@ -13,8 +13,8 @@
 //
 // WHAT CODE WILL EVENTUALLY GO HERE:
 // - Abstract methods such as:
-//   - Future<List<ReminderEntity>> getActiveReminders();
-//   - Future<void> saveReminder(ReminderEntity reminder);
+//   - Future<List<Reminder>> getActiveReminders();
+//   - Future<void> saveReminder(Reminder reminder);
 //   - Future<void> updateNextTrigger(String reminderId, DateTime nextTrigger);
 //   - Future<void> deleteReminder(String id);
 //
@@ -27,7 +27,7 @@
 // No data methods or storage logic are implemented yet.
 // ============================================================================
 
-import '../entities/reminder_entity.dart';
+import '../entities/reminder.dart';
 
 abstract class ReminderRepository {
   // Placeholder repository contract for reminders.
