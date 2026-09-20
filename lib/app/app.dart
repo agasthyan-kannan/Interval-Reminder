@@ -31,7 +31,7 @@
 
 import 'package:flutter/material.dart';
 import 'theme/app_theme.dart';
-import '../features/tasks/presentation/screens/home_screen.dart';
+import '../features/reminders/presentation/screens/home_screen.dart';
 
 class IntervalReminderApp extends StatelessWidget {
   const IntervalReminderApp({super.key});

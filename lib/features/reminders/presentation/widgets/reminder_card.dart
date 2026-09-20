@@ -3,11 +3,13 @@
 //
 // WHAT THIS FILE DOES:
 // This file defines the ReminderCard widget, which renders an individual
-// reminder card with:
-// - Title, description, formatted interval, and start time.
+// reminder card in the list with:
+// - Status icon, title, optional description, interval, and start time.
 // - An active/paused toggle Switch.
 // - An Edit IconButton.
 // - A Delete IconButton.
+// - Clear visual distinction for Enabled vs Disabled states (including
+//   a text status indicator for accessibility, rather than relying solely on color).
 //
 // LIFTING STATE UP:
 // Notice that ReminderCard does NOT mutate the reminder directly.
@@ -20,6 +22,7 @@
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import '../../../../core/utils/date_time_utils.dart';
 import '../../domain/entities/reminder.dart';
 
 class ReminderCard extends StatelessWidget {
@@ -36,137 +39,174 @@ class ReminderCard extends StatelessWidget {
     required this.onDelete,
   });
 
-  // Helper method to format interval duration into human-readable text
-  String _formatInterval(Duration interval) {
-    final int hours = interval.inHours;
-    final int minutes = interval.inMinutes % 60;
-
-    if (hours > 0 && minutes > 0) {
-      return 'Every ${hours}h ${minutes}m';
-    } else if (hours > 0) {
-      return 'Every $hours ${hours == 1 ? "hour" : "hours"}';
-    } else {
-      return 'Every $minutes ${minutes == 1 ? "minute" : "minutes"}';
-    }
-  }
-
-  // Helper method to format start time (e.g. "10:00 AM")
-  String _formatTime(DateTime dateTime) {
-    final int hour = dateTime.hour;
-    final int minute = dateTime.minute;
-    final String period = hour >= 12 ? 'PM' : 'AM';
-    final int displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-    final String displayMinute = minute.toString().padLeft(2, '0');
-    return '$displayHour:$displayMinute $period';
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12.0),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // TOP ROW: Status Icon, Title, Switch, Edit Button, Delete Button
-            Row(
-              children: [
-                Icon(
-                  reminder.isEnabled ? Icons.alarm_on : Icons.alarm_off,
-                  color: reminder.isEnabled
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.outline,
-                ),
-                const SizedBox(width: 12),
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isEnabled = reminder.isEnabled;
 
-                // Reminder Title
-                Expanded(
-                  child: Text(
-                    reminder.title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: reminder.isEnabled
-                              ? null
-                              : Theme.of(context).colorScheme.outline,
+    // ACCESSIBILITY & VISUAL CLARITY:
+    // When disabled, we reduce opacity and provide a clear textual status badge
+    // ("Active" vs "Paused"). This ensures users with visual impairments or
+    // color blindness can immediately determine reminder status without relying on color alone.
+    return Opacity(
+      opacity: isEnabled ? 1.0 : 0.65,
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12.0),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ---------------------------------------------------------------
+              // TOP ROW: Status Icon, Title, Status Badge, Switch, Edit, Delete
+              // ---------------------------------------------------------------
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Status Icon (alarm_on vs alarm_off)
+                  Icon(
+                    isEnabled ? Icons.alarm_on : Icons.alarm_off,
+                    color: isEnabled
+                        ? colorScheme.primary
+                        : colorScheme.outline,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+
+                  // Reminder Title (with overflow protection)
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          reminder.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            decoration: isEnabled
+                                ? null
+                                : TextDecoration.lineThrough,
+                            color: isEnabled
+                                ? colorScheme.onSurface
+                                : colorScheme.outline,
+                          ),
                         ),
+                        const SizedBox(height: 2),
+                        // Non-color dependent status badge for accessibility
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6.0,
+                            vertical: 2.0,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isEnabled
+                                ? colorScheme.primaryContainer
+                                : colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4.0),
+                          ),
+                          child: Text(
+                            isEnabled ? 'Active' : 'Paused',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: isEnabled
+                                  ? colorScheme.onPrimaryContainer
+                                  : colorScheme.outline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Switch: Toggles reminder enabled/disabled
+                  Switch(
+                    value: isEnabled,
+                    onChanged: onToggle,
+                  ),
+
+                  // Edit Button with semantic tooltip
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Edit reminder',
+                    onPressed: onEdit,
+                  ),
+
+                  // Delete Button with semantic tooltip
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    color: Colors.red.shade400,
+                    tooltip: 'Delete reminder',
+                    onPressed: onDelete,
+                  ),
+                ],
+              ),
+
+              // ---------------------------------------------------------------
+              // OPTIONAL DESCRIPTION (if provided)
+              // ---------------------------------------------------------------
+              if (reminder.description != null &&
+                  reminder.description!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  reminder.description!,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
-
-                // Switch: Toggles reminder enabled/disabled
-                Switch(
-                  value: reminder.isEnabled,
-                  onChanged: onToggle,
-                ),
-
-                // Edit Button
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  tooltip: 'Edit reminder',
-                  onPressed: onEdit,
-                ),
-
-                // Delete Button
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  color: Colors.red.shade400,
-                  tooltip: 'Delete reminder',
-                  onPressed: onDelete,
-                ),
               ],
-            ),
 
-            // OPTIONAL DESCRIPTION (if provided)
-            if (reminder.description != null && reminder.description!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                reminder.description!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+              const Divider(height: 24),
+
+              // ---------------------------------------------------------------
+              // BOTTOM ROW: Interval and Start Time details
+              // ---------------------------------------------------------------
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Interval display
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.repeat,
+                        size: 16,
+                        color: isEnabled ? colorScheme.primary : colorScheme.outline,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        DateTimeUtils.formatInterval(reminder.interval),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: isEnabled ? colorScheme.onSurface : colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Start Time display
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.schedule,
+                        size: 16,
+                        color: isEnabled ? colorScheme.secondary : colorScheme.outline,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Starts at ${DateTimeUtils.formatTime(reminder.startTime)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
-
-            const Divider(height: 20),
-
-            // BOTTOM ROW: Interval and Start Time details
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Interval display
-                Row(
-                  children: [
-                    const Icon(Icons.repeat, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatInterval(reminder.interval),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ],
-                ),
-
-                // Start Time display
-                Row(
-                  children: [
-                    const Icon(Icons.schedule, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Starts at ${_formatTime(reminder.startTime)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

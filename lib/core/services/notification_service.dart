@@ -21,6 +21,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import '../constants/app_constants.dart';
 import '../../features/reminders/domain/entities/reminder.dart';
 
 class NotificationService {
@@ -35,10 +36,10 @@ class NotificationService {
   // ---------------------------------------------------------------------------
   // ANDROID NOTIFICATION CHANNEL CONSTANTS
   // ---------------------------------------------------------------------------
-  static const String _channelId = 'interval_reminder_channel';
-  static const String _channelName = 'Interval Reminders';
-  static const String _channelDescription =
-      'Scheduled repeating interval reminders for your tasks';
+  // Sourced from AppConstants for a single source of truth across the project.
+  static const String _channelId = AppConstants.notificationChannelId;
+  static const String _channelName = AppConstants.notificationChannelName;
+  static const String _channelDescription = AppConstants.notificationChannelDescription;
 
   bool _isInitialized = false;
 

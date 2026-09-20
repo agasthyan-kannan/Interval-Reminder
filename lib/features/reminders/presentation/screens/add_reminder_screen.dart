@@ -9,8 +9,8 @@
 // WHY REUSING A SINGLE SCREEN IS BETTER THAN CREATING TWO SCREENS:
 // 1. Code Reusability: 95% of the UI (TextFormFields, validation logic, time picker)
 //    is identical between creating and editing.
-// 2. Maintainability: If we add a new field (like sound selection) in the future,
-//    we only update it in this one file rather than maintaining two duplicate screens!
+// 2. Maintainability: If we add a new field in the future, we only update it in
+//    this one file rather than maintaining two duplicate screens!
 //
 // WHY PRESERVING THE ID IS CRUCIAL IN EDIT MODE:
 // When editing, we MUST retain the existing reminder.id!
@@ -18,6 +18,10 @@
 // reminder.id -> notificationId (31-bit integer).
 // If we generated a new ID when editing, the old notification alarm would be
 // orphaned in the Android system and could never be cancelled!
+//
+// PREVENTING ACCIDENTAL DOUBLE-SUBMITS:
+// We maintain an '_isSaving' boolean flag. Once the user taps Save, the button
+// is temporarily disabled while validation and processing occur.
 // ============================================================================
 
 import 'package:flutter/material.dart';
@@ -46,6 +50,9 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
   late final TextEditingController _minutesController;
 
   late TimeOfDay _selectedTime;
+
+  // Prevents accidental multiple taps on the Save button
+  bool _isSaving = false;
 
   // Convenience getter to check current mode
   bool get _isEditMode => widget.reminderToEdit != null;
@@ -111,6 +118,8 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
 
   // Validates form inputs and creates/updates the Reminder object
   void _saveReminder() {
+    if (_isSaving) return;
+
     // 1. Validate form fields
     if (!_formKey.currentState!.validate()) {
       return;
@@ -134,7 +143,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
     // 3. Validate against maximum allowed interval (7 days)
     if (interval.inMinutes > AppConstants.maxIntervalMinutes) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
             'Interval cannot exceed ${AppConstants.maxIntervalDays} days.',
           ),
@@ -143,6 +152,10 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       );
       return;
     }
+
+    setState(() {
+      _isSaving = true;
+    });
 
     // 4. Combine today's date with selected time
     final DateTime now = DateTime.now();
@@ -207,10 +220,11 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
               // ---------------------------------------------------------------
               TextFormField(
                 controller: _titleController,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
                   labelText: 'Reminder title *',
                   hintText: 'e.g., Drink Water',
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.title),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -227,10 +241,11 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
               TextFormField(
                 controller: _descriptionController,
                 maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
                   labelText: 'Description (Optional)',
                   hintText: 'e.g., Stay hydrated throughout the work day',
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.notes),
                   alignLabelWithHint: true,
                 ),
               ),
@@ -245,7 +260,14 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                       fontWeight: FontWeight.bold,
                     ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
+              Text(
+                'How often you want this reminder to repeat.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 12),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -256,7 +278,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: 'Hours',
-                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.hourglass_bottom),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -273,17 +295,13 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                   const SizedBox(width: 16),
 
                   // Minutes input (explicitly restricted to 0-59)
-                  // WHY EXPLICIT VALIDATION IS PREFERRED OVER SILENT CONVERSION:
-                  // If a user types '75', silently converting it to '1 hour 15 minutes'
-                  // hides mistakes (the user might have meant '7' or '5'). Explicit
-                  // validation educates the user and prevents unintended schedules.
                   Expanded(
                     child: TextFormField(
                       controller: _minutesController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: 'Minutes',
-                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.timelapse),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -310,48 +328,77 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                       fontWeight: FontWeight.bold,
                     ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
+              Text(
+                'The initial time of day from which the interval begins.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 12),
               InkWell(
                 onTap: _pickTime,
-                borderRadius: BorderRadius.circular(8.0),
+                borderRadius: BorderRadius.circular(12.0),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16.0,
                     vertical: 14.0,
                   ),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8.0),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.3),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+                    ),
+                    borderRadius: BorderRadius.circular(12.0),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        _selectedTime.format(context),
-                        style: Theme.of(context).textTheme.bodyLarge,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _selectedTime.format(context),
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
                       ),
-                      const Icon(Icons.access_time),
+                      Text(
+                        'Change',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 36),
 
               // ---------------------------------------------------------------
               // 5. SAVE / UPDATE BUTTON
               // ---------------------------------------------------------------
               ElevatedButton(
-                onPressed: _saveReminder,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                ),
-                child: Text(
-                  _isEditMode ? 'Save Changes' : 'Create Reminder',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                onPressed: _isSaving ? null : _saveReminder,
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        _isEditMode ? 'Save Changes' : 'Create Reminder',
+                      ),
               ),
             ],
           ),

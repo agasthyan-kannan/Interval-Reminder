@@ -35,4 +35,13 @@ class AppConstants {
   static const int maxIntervalDays = 7;
   static const int maxIntervalHours = maxIntervalDays * 24; // 168 hours
   static const int maxIntervalMinutes = maxIntervalHours * 60; // 10,080 minutes
+  // ---------------------------------------------------------------------------
+  // NOTIFICATION CHANNEL CONFIGURATION
+  // ---------------------------------------------------------------------------
+  // Android notification channels allow users to customize notification settings
+  // (sound, vibration, importance) per category in Android system settings.
+  static const String notificationChannelId = 'interval_reminder_channel';
+  static const String notificationChannelName = 'Reminder Notifications';
+  static const String notificationChannelDescription =
+      'Scheduled repeating interval reminders for your tasks';
 }

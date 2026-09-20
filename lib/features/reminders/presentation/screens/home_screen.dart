@@ -1,14 +1,15 @@
 // ============================================================================
-// FILE: lib/features/tasks/presentation/screens/home_screen.dart
+// FILE: lib/features/reminders/presentation/screens/home_screen.dart
 //
 // WHAT THIS FILE DOES:
 // This is the Home screen of the Interval Reminder app.
-// It manages:
+// It coordinates:
 // 1. In-memory and persistent storage of reminders via ReminderRepository.
 // 2. Lifecycle observation (WidgetsBindingObserver) to check permissions and
 //    synchronize notifications when the app returns to the foreground.
-// 3. UI feedback if notification permissions are denied.
-// 4. User actions: Add, Edit, Toggle, and Delete reminders.
+// 3. UI feedback if notification permissions are denied (non-intrusive warning banner).
+// 4. User actions: Add, Edit, Toggle, and Delete reminders with confirmation.
+// 5. User feedback via SnackBars for all operations (created, updated, deleted, etc.).
 //
 // APP LIFECYCLE VS OPERATING SYSTEM NOTIFICATION SCHEDULING:
 // - Flutter App Lifecycle: Governs the state of the Flutter Dart VM when the user
@@ -25,13 +26,13 @@
 
 import 'package:flutter/material.dart';
 import '../../../../core/services/notification_service.dart';
-import '../../../reminders/domain/entities/reminder.dart';
-import '../../../reminders/domain/repositories/reminder_repository.dart';
-import '../../../reminders/domain/services/reminder_scheduler.dart';
-import '../../../reminders/domain/services/reminder_sync_service.dart';
-import '../../../reminders/data/repositories/reminder_repository_impl.dart';
-import '../../../reminders/presentation/screens/add_reminder_screen.dart';
-import '../../../reminders/presentation/widgets/reminder_card.dart';
+import '../../domain/entities/reminder.dart';
+import '../../domain/repositories/reminder_repository.dart';
+import '../../domain/services/reminder_scheduler.dart';
+import '../../domain/services/reminder_sync_service.dart';
+import '../../data/repositories/reminder_repository_impl.dart';
+import '../widgets/reminder_card.dart';
+import 'add_reminder_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -41,7 +42,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 // WidgetsBindingObserver allows this State object to listen for operating system
-// lifecycle events (e.g. app minimized, app resumed to foreground).
+// lifecycle events (e.g., app minimized, app resumed to foreground).
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------------
   // SERVICES
@@ -204,6 +205,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             reminder: reminder,
             scheduledTime: nextOccurrence,
           );
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Reminder created'),
+              ),
+            );
+          }
         } catch (e) {
           debugPrint('HomeScreen: Failed to schedule reminder ${reminder.id}: $e');
           if (mounted) {
@@ -216,6 +225,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             );
           }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Reminder created (paused)'),
+            ),
+          );
         }
       }
     }
@@ -260,6 +277,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             reminder: updatedReminder,
             scheduledTime: nextOccurrence,
           );
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Reminder updated'),
+              ),
+            );
+          }
         } catch (e) {
           debugPrint('HomeScreen: Failed to reschedule reminder ${updatedReminder.id}: $e');
           if (mounted) {
@@ -272,6 +297,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             );
           }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Reminder updated (paused)'),
+            ),
+          );
         }
       }
     }
@@ -300,30 +333,81 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           reminder: updatedReminder,
           scheduledTime: nextOccurrence,
         );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Reminder enabled'),
+            ),
+          );
+        }
       } catch (e) {
         debugPrint('HomeScreen: Error enabling reminder notification: $e');
       }
     } else {
       await _notificationService.cancelReminder(updatedReminder.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reminder disabled'),
+          ),
+        );
+      }
     }
   }
 
   // ---------------------------------------------------------------------------
-  // 4. DELETE REMINDER
+  // 4. CONFIRM & DELETE REMINDER
   // ---------------------------------------------------------------------------
-  void _deleteReminder(int index) async {
-    final reminderToDelete = _reminders[index];
+  // Shows a confirmation dialog before permanently deleting a reminder.
+  Future<void> _confirmAndDeleteReminder(int index) async {
+    final reminder = _reminders[index];
 
-    // 1. Cancel the notification from the OS queue
-    await _notificationService.cancelReminder(reminderToDelete.id);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Delete reminder?'),
+          content: Text(
+            'Are you sure you want to delete "${reminder.title}"?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
 
-    // 2. Remove from in-memory list
-    setState(() {
-      _reminders.removeAt(index);
-    });
+    if (confirmed == true) {
+      // 1. Cancel notification from operating system queue
+      await _notificationService.cancelReminder(reminder.id);
 
-    // 3. Persist updated list to storage
-    await _saveReminders();
+      // 2. Remove from in-memory list
+      setState(() {
+        _reminders.removeAt(index);
+      });
+
+      // 3. Persist updated list to storage
+      await _saveReminders();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reminder deleted'),
+          ),
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -393,30 +477,51 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // WIDGET BUILDER: EMPTY STATE
   // ---------------------------------------------------------------------------
   Widget _buildEmptyState() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'No reminders yet',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Create a reminder to get started.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _navigateToAddReminder,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Reminder'),
-          ),
-        ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Prominent empty state icon
+            Icon(
+              Icons.alarm_add_rounded,
+              size: 80,
+              color: colorScheme.primary.withValues(alpha: 0.7),
+            ),
+            const SizedBox(height: 24),
+
+            // Main heading
+            Text(
+              'No reminders yet',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+
+            // Helpful explanation
+            Text(
+              'Create your first interval reminder\nto receive notifications at regular intervals.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.5,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+
+            // Call to action button
+            ElevatedButton.icon(
+              onPressed: _navigateToAddReminder,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Reminder'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -435,7 +540,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           reminder: reminder,
           onToggle: (isEnabled) => _toggleReminder(index, isEnabled),
           onEdit: () => _navigateToEditReminder(index),
-          onDelete: () => _deleteReminder(index),
+          onDelete: () => _confirmAndDeleteReminder(index),
         );
       },
     );
