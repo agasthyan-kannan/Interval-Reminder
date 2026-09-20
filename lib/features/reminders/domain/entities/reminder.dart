@@ -148,4 +148,62 @@ class Reminder {
       startTime: startTime ?? this.startTime,
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // JSON SERIALIZATION (Dart Object -> Map<String, dynamic>)
+  // ---------------------------------------------------------------------------
+  // WHAT IS SERIALIZATION?
+  // Serialization is converting a complex Dart object into a format that can
+  // be easily saved or transmitted (like JSON text).
+  //
+  // WHY WE RETURN Map<String, dynamic>:
+  // - A Dart Map represents key-value pairs (e.g. {'title': 'Drink Water'}).
+  // - Dart's jsonEncode() function knows how to turn a Map<String, dynamic>
+  //   into a JSON string!
+  //
+  // WHY WE CONVERT Duration AND DateTime:
+  // - JSON only understands primitives: numbers (int, double), strings, booleans,
+  //   and lists/maps.
+  // - JSON does NOT have a "Duration" or "DateTime" type!
+  // - So, we convert 'interval' into total minutes (an int): interval.inMinutes
+  // - And we convert 'startTime' into an ISO 8601 string: startTime.toIso8601String()
+  //   (e.g., "2026-09-20T10:00:00.000").
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'intervalMinutes': interval.inMinutes,
+      'isEnabled': isEnabled,
+      'startTime': startTime.toIso8601String(),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // JSON DESERIALIZATION (Map<String, dynamic> -> Dart Object)
+  // ---------------------------------------------------------------------------
+  // WHAT IS DESERIALIZATION?
+  // Deserialization is the reverse process: reading raw data from storage
+  // (a Map<String, dynamic>) and reconstructing a strongly-typed Dart 'Reminder' object.
+  //
+  // WHAT IS A factory CONSTRUCTOR?
+  // A standard constructor creates a brand new instance immediately.
+  // A 'factory' constructor can execute logic first (like parsing strings or
+  // converting minutes to Duration) before creating and returning the object.
+  //
+  // TYPE CASTING ('as String', 'as int'):
+  // Because json is Map<String, dynamic>, the values have type 'dynamic'.
+  // We safely cast each value to its expected Dart type.
+  factory Reminder.fromJson(Map<String, dynamic> json) {
+    return Reminder(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      description: json['description'] as String?,
+      // Convert stored integer minutes back into a rich Dart Duration object
+      interval: Duration(minutes: json['intervalMinutes'] as int),
+      isEnabled: json['isEnabled'] as bool,
+      // Parse ISO 8601 date string back into a DateTime object
+      startTime: DateTime.parse(json['startTime'] as String),
+    );
+  }
 }

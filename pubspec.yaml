@@ -11,6 +11,9 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Local key-value storage for persistence
+  shared_preferences: ^2.3.2
+
   # Cupertino icons for iOS style icons
   cupertino_icons: ^1.0.8
 

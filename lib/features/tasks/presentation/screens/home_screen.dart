@@ -3,34 +3,27 @@
 //
 // WHAT THIS FILE DOES:
 // This is the Home screen of the Interval Reminder app.
-// It manages an in-memory list of reminders created by the user and displays:
-// 1. An empty-state message if no reminders exist yet.
-// 2. A scrollable list of ReminderCard widgets once reminders are created.
+// It manages the list of reminders and now connects to a persistent
+// ReminderRepository so that reminders survive application restarts!
 //
-// WHY HomeScreen MUST BE A StatefulWidget:
-// A StatelessWidget is immutable and cannot hold mutable data that changes over time.
+// HOW PERSISTENCE WORKS ON THIS SCREEN:
+// 1. When HomeScreen is first created, initState() calls _loadReminders().
+// 2. While loading from local storage, a CircularProgressIndicator is displayed.
+// 3. Once loaded, the reminders appear in the ListView.builder.
+// 4. Whenever a reminder is ADDED, TOGGLED, or DELETED, we update both:
+//    - The in-memory list (_reminders) via setState() for immediate UI update.
+//    - The local storage via _repository.saveReminders() for persistence!
 //
-// In our app, the user can create, toggle, and delete reminders while the app is
-// running! The HomeScreen needs to maintain a list of reminders (_reminders).
-// When an item is added, toggled, or deleted, we call setState() so that Flutter
-// knows to trigger a rebuild and repaint the UI on screen.
-//
-// WHY THE LIST BELONGS IN State:
-// In Flutter's architecture, state belongs to the widget that is directly responsible
-// for displaying and manipulating that data. Since HomeScreen displays the list,
-// it owns the list.
-//
-// PASSING DATA BETWEEN SCREENS WITHOUT PACKAGES:
-// Notice how clean the data flow is:
-// 1. HomeScreen opens AddReminderScreen with 'await Navigator.push()'.
-// 2. AddReminderScreen creates the Reminder object and sends it back via
-//    'Navigator.pop(context, reminder)'.
-// 3. HomeScreen receives that Reminder object directly and adds it to its state!
-// No external state-management package is required for this fundamental flow.
+// WHY STORAGE CODE IS NOT DIRECTLY IN THIS WIDGET:
+// Notice that this file has ZERO references to 'SharedPreferences' or 'jsonEncode'!
+// The UI only knows about 'ReminderRepository'. If we change the storage engine
+// from SharedPreferences to SQLite later, this screen will NOT need a single change!
 // ============================================================================
 
 import 'package:flutter/material.dart';
 import '../../../reminders/domain/entities/reminder.dart';
+import '../../../reminders/domain/repositories/reminder_repository.dart';
+import '../../../reminders/data/repositories/reminder_repository_impl.dart';
 import '../../../reminders/presentation/screens/add_reminder_screen.dart';
 import '../../../reminders/presentation/widgets/reminder_card.dart';
 
@@ -43,35 +36,84 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   // ---------------------------------------------------------------------------
-  // IN-MEMORY DATA STORAGE
+  // REPOSITORY INSTANCE
   // ---------------------------------------------------------------------------
-  // The list belongs to the Home Screen because the Home Screen is currently
-  // responsible for displaying the reminders.
-  //
-  // Later, when our application becomes larger, we may move this responsibility
-  // into a dedicated state-management layer or database. For now, keeping it here
-  // makes the data flow easy to understand and learn.
-  //
-  // NOTE: Because this list is stored in RAM (in-memory), restarting the app
-  // will reset this list to empty. This is expected until we add persistence!
+  // We instantiate our repository implementation here.
+  // HomeScreen interacts exclusively through the abstract ReminderRepository interface.
+  final ReminderRepository _repository = ReminderRepositoryImpl();
+
+  // In-memory list of reminders currently loaded in the UI
   final List<Reminder> _reminders = [];
 
   // ---------------------------------------------------------------------------
-  // NAVIGATION & RECEIVING RETURNED DATA
+  // LOADING STATE
   // ---------------------------------------------------------------------------
-  // WHAT 'Future', 'async', AND 'await' DO:
-  // - Navigating to a new screen is an asynchronous action that takes time.
-  // - Navigator.push() returns a Future<Reminder?>. A Future represents a value
-  //   that will be available sometime in the future.
-  // - 'await' pauses the execution of this method until the user closes
-  //   AddReminderScreen and returns a result.
+  // Reading from local storage is asynchronous (takes time).
+  // _isLoading starts as 'true' so we can show a CircularProgressIndicator
+  // until the data has been read from disk.
+  bool _isLoading = true;
+
+  // ---------------------------------------------------------------------------
+  // LIFECYCLE: initState()
+  // ---------------------------------------------------------------------------
+  // WHAT IS initState()?
+  // initState() is called exactly once when this State object enters the widget tree.
+  // It is the standard place to trigger initial data loading.
   //
-  // WHAT NULLABLE 'Reminder?' MEANS:
-  // - If the user tapped "Save Reminder", AddReminderScreen calls:
-  //   Navigator.pop(context, newReminder) -> returns a valid Reminder object.
-  // - If the user pressed the back button or cancelled, AddReminderScreen calls:
-  //   Navigator.pop(context) -> returns null!
-  // The '?' question mark handles both cases safely without runtime errors.
+  // WHY initState() CANNOT BE 'async':
+  // Flutter's widget lifecycle requires initState() to execute synchronously
+  // before the first build() call. Therefore, we call an asynchronous helper
+  // function (_loadReminders()) from inside initState() without making initState() async!
+  @override
+  void initState() {
+    super.initState();
+    _loadReminders();
+  }
+
+  // ---------------------------------------------------------------------------
+  // LOAD REMINDERS FROM STORAGE
+  // ---------------------------------------------------------------------------
+  // WHAT 'async' AND 'await' DO:
+  // - Reading from disk takes time, so getReminders() returns a Future<List<Reminder>>.
+  // - 'await' pauses execution until SharedPreferences reads and deserializes the data.
+  // - Once finished, setState() stores the items and flips _isLoading to false.
+  Future<void> _loadReminders() async {
+    try {
+      final loadedReminders = await _repository.getReminders();
+
+      // Ensure the widget is still on screen before calling setState()
+      if (!mounted) return;
+
+      setState(() {
+        _reminders.clear();
+        _reminders.addAll(loadedReminders);
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('HomeScreen: Error loading reminders: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // SAVE REMINDERS HELPER
+  // ---------------------------------------------------------------------------
+  // A centralized helper to persist the current _reminders list to storage.
+  Future<void> _saveReminders() async {
+    try {
+      await _repository.saveReminders(_reminders);
+    } catch (e) {
+      debugPrint('HomeScreen: Error saving reminders: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // NAVIGATION & ADDING A REMINDER
+  // ---------------------------------------------------------------------------
   Future<void> _navigateToAddReminder() async {
     final Reminder? reminder = await Navigator.push<Reminder>(
       context,
@@ -80,42 +122,38 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
-    // If a reminder was returned, add it to our list inside setState()
     if (reminder != null) {
-      // WHY setState() IS REQUIRED:
-      // Modifying _reminders alone (_reminders.add(reminder)) updates the Dart list
-      // in memory, but DOES NOT update the screen!
-      //
-      // Calling setState() tells Flutter:
-      // "The state has changed! Please call build() again to repaint the UI."
       setState(() {
         _reminders.add(reminder);
       });
+
+      // Persist the updated list to local storage immediately!
+      await _saveReminders();
     }
   }
 
   // ---------------------------------------------------------------------------
-  // TOGGLE REMINDER ENABLED / DISABLED
+  // TOGGLING A REMINDER
   // ---------------------------------------------------------------------------
-  // WHY copyWith() IS USED HERE:
-  // The Reminder class is IMMUTABLE (all its fields are 'final').
-  // We cannot write: _reminders[index].isEnabled = isEnabled; (compile error).
-  //
-  // Instead, we use copyWith() to create a NEW Reminder object with the updated
-  // isEnabled boolean, and replace the old object in the list inside setState().
-  void _toggleReminder(int index, bool isEnabled) {
+  void _toggleReminder(int index, bool isEnabled) async {
     setState(() {
       _reminders[index] = _reminders[index].copyWith(isEnabled: isEnabled);
     });
+
+    // Save updated enabled status to storage
+    await _saveReminders();
   }
 
   // ---------------------------------------------------------------------------
-  // DELETE REMINDER
+  // DELETING A REMINDER
   // ---------------------------------------------------------------------------
-  void _deleteReminder(int index) {
+  void _deleteReminder(int index) async {
     setState(() {
       _reminders.removeAt(index);
     });
+
+    // Save the list after deletion to ensure it stays deleted across restarts!
+    await _saveReminders();
   }
 
   // ---------------------------------------------------------------------------
@@ -129,14 +167,16 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
 
       // CONDITIONAL RENDERING:
-      // Flutter lets you use standard Dart ternary operators (condition ? A : B)
-      // to render completely different widget trees depending on current state:
-      // - If _reminders.isEmpty: show the empty-state instructions.
-      // - If _reminders.isNotEmpty: show the scrollable list of cards!
-      body: _reminders.isEmpty ? _buildEmptyState() : _buildRemindersList(),
+      // 1. While loading from storage: Show CircularProgressIndicator.
+      // 2. If finished and list is empty: Show empty state.
+      // 3. If finished and list has items: Show ListView.builder!
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _reminders.isEmpty
+              ? _buildEmptyState()
+              : _buildRemindersList(),
 
-      // FloatingActionButton allows adding more reminders once the list has items
-      floatingActionButton: _reminders.isNotEmpty
+      floatingActionButton: (!_isLoading && _reminders.isNotEmpty)
           ? FloatingActionButton(
               onPressed: _navigateToAddReminder,
               tooltip: 'Add Reminder',
@@ -181,12 +221,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // ---------------------------------------------------------------------------
   // WIDGET BUILDER: REMINDERS LIST
   // ---------------------------------------------------------------------------
-  // HOW ListView.builder() WORKS:
-  // Rather than instantiating all widgets upfront, ListView.builder only creates
-  // widgets that are currently visible on the screen.
-  //
-  // - 'itemCount': Tells Flutter how many total rows exist.
-  // - 'itemBuilder': A factory callback that Flutter calls for each visible index (0, 1, 2...).
   Widget _buildRemindersList() {
     return ListView.builder(
       padding: const EdgeInsets.all(16.0),
@@ -194,7 +228,6 @@ class _HomeScreenState extends State<HomeScreen> {
       itemBuilder: (context, index) {
         final reminder = _reminders[index];
 
-        // Pass the reminder and action callbacks to the reusable ReminderCard
         return ReminderCard(
           reminder: reminder,
           onToggle: (isEnabled) => _toggleReminder(index, isEnabled),
