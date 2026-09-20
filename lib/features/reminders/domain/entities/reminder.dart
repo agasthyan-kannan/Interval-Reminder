@@ -110,4 +110,42 @@ class Reminder {
     required this.isEnabled,
     required this.startTime,
   });
+
+  // ---------------------------------------------------------------------------
+  // COPYWITH METHOD: IMMUTABLE STATE UPDATES
+  // ---------------------------------------------------------------------------
+  // WHAT IS copyWith()?
+  // Since all properties of Reminder are 'final', we cannot directly modify them
+  // (e.g., reminder.isEnabled = false is NOT allowed by Dart).
+  //
+  // Instead, copyWith() creates and returns a BRAND NEW Reminder object, copying
+  // all the existing values while replacing only the specific properties you pass in!
+  //
+  // WHY IMMUTABLE OBJECTS ARE USEFUL:
+  // 1. Predictability: An object's values never change behind your back.
+  // 2. Thread-safety & UI integrity: Flutter widgets can safely render this object
+  //    without fear that another part of the code mutates it mid-frame.
+  // 3. Clear state transitions: In setState(), assigning a new object (_reminders[i] = ...)
+  //    makes it explicit that state has changed to a new snapshot.
+  //
+  // HOW THE '??' (IF-NULL) OPERATOR WORKS:
+  // 'isEnabled ?? this.isEnabled' means:
+  // "If a new isEnabled value was provided, use it. Otherwise, keep the current value!"
+  Reminder copyWith({
+    String? id,
+    String? title,
+    String? description,
+    Duration? interval,
+    bool? isEnabled,
+    DateTime? startTime,
+  }) {
+    return Reminder(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      interval: interval ?? this.interval,
+      isEnabled: isEnabled ?? this.isEnabled,
+      startTime: startTime ?? this.startTime,
+    );
+  }
 }
