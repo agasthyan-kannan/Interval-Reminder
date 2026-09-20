@@ -1,55 +1,64 @@
 // ============================================================================
 // FILE: lib/app/theme/app_theme.dart
-// FOLDER: lib/app/theme/
 //
-// WHY THIS FOLDER EXISTS:
-// The 'theme' folder houses styling, colors, typography, and widget themes.
-// Grouping theme data here keeps visual appearance uniform across all screens
-// and makes it easy to modify colors or add Dark Mode later.
+// WHAT THIS FILE DOES:
+// This file centralizes the visual design and theming configuration for the
+// Interval Reminder application.
 //
-// RESPONSIBILITY:
-// This file configures ThemeData for light mode (and eventually dark mode),
-// including primary colors, card styles, app bar appearance, and text themes.
+// WHAT A FLUTTER THEME IS:
+// In Flutter, a 'ThemeData' object defines the colors, typography (fonts),
+// button shapes, and component styles for your whole application.
 //
-// WHAT CODE WILL EVENTUALLY GO HERE:
-// - ThemeData lightTheme definition.
-// - ThemeData darkTheme definition.
-// - Color palette definitions (e.g., primary, accent, background colors).
-// - Reusable button and input decoration styles.
-//
-// HOW THIS RELATES TO THE REST OF THE APP:
-// - Provided to MaterialApp in 'lib/app/app.dart'.
-// - Automatically applied to every Flutter widget (Text, Card, AppBar, Buttons)
-//   across all features.
-//
-// CURRENT STATUS:
-// This file is currently a placeholder containing basic theme definitions.
-// No custom styling or color palettes are implemented yet.
+// WHY HAVING A CENTRAL THEME IS USEFUL:
+// 1. Consistency: Every button, app bar, card, and text field automatically
+//    shares the same color scheme and styling without having to re-declare
+//    colors on each individual widget.
+// 2. Maintainability: If you want to change your app's brand color from blue
+//    to teal, or adjust font sizes, you only update this single file!
+// 3. Dark Mode Support: Centralizing themes makes it straightforward to
+//    provide both a lightTheme and a darkTheme that toggle seamlessly.
 // ============================================================================
 
 import 'package:flutter/material.dart';
 
 class AppTheme {
+  // Private constructor prevents creating instances of this utility class.
   AppTheme._();
 
-  // Basic light theme configuration placeholder
+  // lightTheme defines the styling when the device is in Light Mode.
   static ThemeData get lightTheme {
     return ThemeData(
+      // useMaterial3: true enables Google's latest Material Design 3 system,
+      // which includes modern rounded corners, dynamic color palettes, and updated components.
       useMaterial3: true,
+
+      // ColorScheme.fromSeed() automatically generates a complete, harmonious
+      // color palette (primary, secondary, surfaces, error colors, etc.) based on
+      // a single seed color (here, Colors.blue).
       colorScheme: ColorScheme.fromSeed(
         seedColor: Colors.blue,
         brightness: Brightness.light,
       ),
+
+      // AppBarTheme defines the default appearance of all AppBars in the app.
+      appBarTheme: const AppBarTheme(
+        centerTitle: true,
+        elevation: 0,
+      ),
     );
   }
 
-  // Basic dark theme configuration placeholder
+  // darkTheme defines the styling when the device is in Dark Mode.
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
         seedColor: Colors.blue,
         brightness: Brightness.dark,
+      ),
+      appBarTheme: const AppBarTheme(
+        centerTitle: true,
+        elevation: 0,
       ),
     );
   }

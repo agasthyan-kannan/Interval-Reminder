@@ -1,32 +1,28 @@
 // ============================================================================
 // FILE: lib/main.dart
 //
-// RESPONSIBILITY:
-// This is the main entry point of the entire Flutter application.
-// When you run the app on a physical device, simulator, or web browser,
-// Flutter begins execution by calling the main() function defined here.
+// WHAT THIS FILE DOES:
+// This is the starting entry point of our entire Flutter application.
+// When you start the app, Dart begins execution right here inside the main() function.
 //
-// WHAT CODE WILL EVENTUALLY GO HERE:
-// - Initializing Flutter engine bindings (WidgetsFlutterBinding.ensureInitialized()).
-// - Initializing essential core services before the UI loads (such as local
-//   storage or notification services).
-// - Calling runApp() and passing the root application widget (IntervalReminderApp).
-//
-// HOW THIS RELATES TO THE REST OF THE APP:
-// - main.dart bootstraps the app and hands control over to the root widget
-//   located in 'lib/app/app.dart'.
-// - It keeps startup logic concise and delegates all UI and configuration
-//   responsibilities to dedicated folders.
-//
-// CURRENT STATUS:
-// This file contains only a minimal placeholder entry point to establish the
-// project architecture. No actual initialization or business logic is run.
+// WHY UI CODE IS NOT IN THIS FILE:
+// Keeping main.dart clean and minimal is a Flutter best practice.
+// main.dart should only be responsible for launching the app and initializing
+// critical services. All visual styling, widgets, and navigation belong in
+// dedicated files (like lib/app/app.dart).
 // ============================================================================
 
 import 'package:flutter/material.dart';
 import 'app/app.dart';
 
+// main() is a special function in Dart.
+// It is the first function that the operating system runs when starting the program.
 void main() {
-  // runApp() takes our root widget and inflates it onto the screen.
+  // runApp() is a built-in Flutter function from the Flutter framework.
+  // It takes a Flutter widget and makes it the "root" (the very top) of the widget tree.
+  // It attaches that widget to the device screen and manages rendering every frame.
+  //
+  // 'const' tells Dart that this widget is immutable and can be created at compile-time,
+  // which optimizes performance by avoiding unnecessary rebuilds.
   runApp(const IntervalReminderApp());
 }

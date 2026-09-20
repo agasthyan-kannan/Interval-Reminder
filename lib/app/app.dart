@@ -1,34 +1,37 @@
 // ============================================================================
 // FILE: lib/app/app.dart
-// FOLDER: lib/app/
 //
-// WHY THIS FOLDER EXISTS:
-// The 'app' folder contains top-level configurations that wrap the whole
-// application. This includes the root widget, application routes, and visual themes.
+// WHAT THIS FILE DOES:
+// This file defines the root widget of our application: IntervalReminderApp.
+// It wraps the entire application in a MaterialApp and configures the app title,
+// global theme, and the starting Home screen.
 //
-// RESPONSIBILITY:
-// This file defines the root widget of the application: IntervalReminderApp.
-// It configures MaterialApp, setting up global styling, title, localization,
-// and routing.
+// WHAT A StatelessWidget MEANS:
+// A 'StatelessWidget' is a widget that does NOT hold or change its own internal state
+// over time. Once Flutter builds it, its configuration remains constant unless its
+// parent rebuilds it with new data. Because our root app configuration (title, theme,
+// home screen) doesn't need to change dynamically on its own, a StatelessWidget is
+// the perfect, lightweight choice.
 //
-// WHAT CODE WILL EVENTUALLY GO HERE:
-// - A MaterialApp (or MaterialApp.router) widget.
-// - References to our theme defined in 'lib/app/theme/app_theme.dart'.
-// - Initial route or home screen definition (pointing to our Tasks screen).
-// - Route configuration referencing 'lib/app/routes/app_routes.dart'.
+// WHAT MaterialApp DOES:
+// 'MaterialApp' is a powerful convenience widget provided by the Flutter framework.
+// It sets up the core infrastructure required for Material Design applications:
+// 1. Navigation & Routing (managing screens and history).
+// 2. Theming (injecting ThemeData into the widget tree).
+// 3. Localization & Text Direction (supporting languages and LTR/RTL layouts).
+// 4. Global Overlay and Dialog systems (for Snackbars, BottomSheets, and Alerts).
 //
-// HOW THIS RELATES TO THE REST OF THE APP:
-// - Created and launched directly by 'lib/main.dart'.
-// - Pulls visual styling from 'lib/app/theme/app_theme.dart'.
-// - Uses routing definitions from 'lib/app/routes/app_routes.dart'.
-// - Displays our initial feature screens from 'lib/features/'.
-//
-// CURRENT STATUS:
-// This is a placeholder widget providing a minimal MaterialApp shell.
-// No full UI, navigation, or state management is implemented yet.
+// WHY THE APPLICATION WIDGET IS SEPARATED FROM main.dart:
+// 1. Single Responsibility Principle: main.dart only cares about launching the app;
+//    app.dart cares about configuring the app.
+// 2. Testability: Having IntervalReminderApp in its own file makes it easy to write
+//    widget tests that pump the whole app without re-running main() bootstrap code.
+// 3. Cleanliness: Keeps the entrypoint tidy as the app grows.
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
+import '../features/tasks/presentation/screens/home_screen.dart';
 
 class IntervalReminderApp extends StatelessWidget {
   const IntervalReminderApp({super.key});
@@ -36,13 +39,19 @@ class IntervalReminderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      // The title of the application, used by the device OS (e.g. in the app switcher).
       title: 'Interval Reminder',
+
+      // Hides the small "DEBUG" banner in the top-right corner during development.
       debugShowCheckedModeBanner: false,
-      home: const Scaffold(
-        body: Center(
-          child: Text('Interval Reminder Skeleton'),
-        ),
-      ),
+
+      // Apply our custom light and dark themes from AppTheme.
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+
+      // 'home' defines the default screen displayed when the app launches.
+      // Here, it points directly to our HomeScreen.
+      home: const HomeScreen(),
     );
   }
 }
