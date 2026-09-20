@@ -55,7 +55,7 @@ class AppTheme {
       ),
 
       // Card styling: rounded corners (16dp) with subtle elevation
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 1.5,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16.0),
@@ -115,7 +115,7 @@ class AppTheme {
       ),
 
       // Dialog styling: rounded confirmation modals
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20.0),
         ),
@@ -160,7 +160,7 @@ class AppTheme {
       ),
 
       // Card styling in dark mode
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 1.5,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16.0),
@@ -220,7 +220,7 @@ class AppTheme {
       ),
 
       // Dialog styling in dark mode
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20.0),
         ),
