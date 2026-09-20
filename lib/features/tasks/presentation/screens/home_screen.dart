@@ -5,31 +5,19 @@
 // This is the Home screen of the Interval Reminder app.
 // It manages:
 // 1. In-memory and persistent storage of reminders via ReminderRepository.
-// 2. Scheduling and cancelling device notifications via NotificationService
-//    and ReminderScheduler.
-// 3. Displaying either an empty state or a scrollable list of ReminderCards.
+// 2. Scheduling, updating, and cancelling device notifications via
+//    NotificationService and ReminderScheduler.
+// 3. Navigation to AddReminderScreen for both CREATING and EDITING reminders.
+// 4. Displaying either an empty state or a scrollable list of ReminderCards.
 //
-// HOW THE SCHEDULING ARCHITECTURE WORKS ON THIS SCREEN:
-// - On startup:
-//   1. NotificationService initializes and requests permissions.
-//   2. ReminderRepository loads all saved reminders from SharedPreferences.
-//   3. For every ENABLED reminder, ReminderScheduler calculates the next occurrence,
-//      and NotificationService schedules the notification with the operating system.
-//   4. Any DISABLED reminder has its notification cancelled.
-// - On adding a reminder:
-//   If enabled, its next occurrence is calculated and scheduled.
-// - On toggling a reminder:
-//   If enabled -> calculate next occurrence & schedule.
-//   If disabled -> cancel pending notification.
-// - On deleting a reminder:
-//   Immediately cancel its pending notification and remove it from storage.
-//
-// SEPARATION OF CONCERNS:
-// Notice how clean this screen remains!
-// - Calculation algorithm lives in ReminderScheduler (domain layer).
-// - Notification mechanics live in NotificationService (core layer).
-// - Storage lives in ReminderRepository (data layer).
-// - HomeScreen merely coordinates these three services in response to user actions.
+// NOTIFICATION RESCHEDULING DURING EDITING:
+// When a user edits a reminder (e.g. changing interval from 1 hour to 2 hours):
+// 1. We cancel the old scheduled notification using the reminder's stable ID.
+// 2. We update the in-memory list and local storage.
+// 3. If the reminder is enabled, we calculate the NEW next occurrence and
+//    schedule the new notification with the operating system.
+// Cancelling before rescheduling guarantees that no duplicate or orphaned
+// alarms remain active in Android AlarmManager!
 // ============================================================================
 
 import 'package:flutter/material.dart';
@@ -73,11 +61,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // ---------------------------------------------------------------------------
   // INITIALIZATION: RESTORE & SCHEDULE NOTIFICATIONS
   // ---------------------------------------------------------------------------
-  // AVOIDING DUPLICATE NOTIFICATIONS ON STARTUP:
-  // When the app starts, we iterate through all saved reminders.
-  // Because NotificationService uses deterministic, stable notification IDs
-  // derived from reminder.id, re-scheduling an existing reminder simply updates
-  // or replaces any pending alarm for that ID instead of creating duplicates!
   Future<void> _initializeAndLoad() async {
     try {
       // 1. Initialize notification channel & timezone database
@@ -135,9 +118,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // NAVIGATION & ADDING A REMINDER
+  // 1. CREATE REMINDER
   // ---------------------------------------------------------------------------
   Future<void> _navigateToAddReminder() async {
+    // Opens AddReminderScreen in CREATE mode (reminderToEdit is null)
     final Reminder? reminder = await Navigator.push<Reminder>(
       context,
       MaterialPageRoute(
@@ -150,10 +134,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _reminders.add(reminder);
       });
 
-      // 1. Persist to storage
+      // Persist to storage
       await _saveReminders();
 
-      // 2. Schedule notification with OS if enabled
+      // Schedule notification with OS if enabled
       if (reminder.isEnabled) {
         final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
           reminder,
@@ -169,7 +153,54 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // TOGGLING A REMINDER
+  // 2. EDIT REMINDER
+  // ---------------------------------------------------------------------------
+  // WHAT THIS METHOD DOES:
+  // Opens AddReminderScreen in EDIT mode by passing the existing reminder.
+  // When the user saves their changes, it cancels the old notification,
+  // updates the list, persists to disk, and reschedules if enabled.
+  Future<void> _navigateToEditReminder(int index) async {
+    final oldReminder = _reminders[index];
+
+    final Reminder? updatedReminder = await Navigator.push<Reminder>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddReminderScreen(
+          reminderToEdit: oldReminder,
+        ),
+      ),
+    );
+
+    if (updatedReminder != null) {
+      // 1. CANCEL THE OLD NOTIFICATION:
+      // The time or interval may have changed, so cancel the previous alarm first.
+      await _notificationService.cancelReminder(oldReminder.id);
+
+      // 2. UPDATE IN-MEMORY LIST:
+      setState(() {
+        _reminders[index] = updatedReminder;
+      });
+
+      // 3. PERSIST UPDATED LIST TO STORAGE:
+      await _saveReminders();
+
+      // 4. RESCHEDULE IF ENABLED:
+      if (updatedReminder.isEnabled) {
+        final nextOccurrence = ReminderScheduler.calculateNextOccurrence(
+          updatedReminder,
+          DateTime.now(),
+        );
+
+        await _notificationService.scheduleReminder(
+          reminder: updatedReminder,
+          scheduledTime: nextOccurrence,
+        );
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3. TOGGLE REMINDER
   // ---------------------------------------------------------------------------
   void _toggleReminder(int index, bool isEnabled) async {
     final updatedReminder = _reminders[index].copyWith(isEnabled: isEnabled);
@@ -200,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // DELETING A REMINDER
+  // 4. DELETE REMINDER
   // ---------------------------------------------------------------------------
   void _deleteReminder(int index) async {
     final reminderToDelete = _reminders[index];
@@ -288,6 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return ReminderCard(
           reminder: reminder,
           onToggle: (isEnabled) => _toggleReminder(index, isEnabled),
+          onEdit: () => _navigateToEditReminder(index),
           onDelete: () => _deleteReminder(index),
         );
       },

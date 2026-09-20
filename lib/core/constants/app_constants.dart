@@ -2,28 +2,17 @@
 // FILE: lib/core/constants/app_constants.dart
 // FOLDER: lib/core/constants/
 //
-// WHY THIS FOLDER EXISTS:
-// The 'core' directory contains code that is fundamental and independent of any
-// single feature. The 'constants' subfolder stores global, unchanging values
-// used throughout the application.
+// WHAT THIS FILE DOES:
+// This file centralizes application-wide constant values, such as the app title
+// and interval limits.
 //
-// RESPONSIBILITY:
-// This file centralizes application-wide constant values so they are defined
-// in one single place instead of being hardcoded into multiple files.
-//
-// WHAT CODE WILL EVENTUALLY GO HERE:
-// - Application name and version string.
-// - Default interval values (e.g., default reminder time in minutes or hours).
-// - Input limits (e.g., maximum task title length, minimum interval allowed).
-// - Storage keys (e.g., database table names or shared preferences keys).
-//
-// HOW THIS RELATES TO THE REST OF THE APP:
-// - Features (tasks, reminders) import this file whenever they need
-//   default limits, preset interval choices, or application labels.
-//
-// CURRENT STATUS:
-// This file is currently a placeholder declaring structural sample constants.
-// No business logic or feature-specific constraints are implemented yet.
+// WHY APPLICATION-WIDE LIMITS BELONG IN CONSTANTS:
+// 1. Single Source of Truth: If we decide to change the maximum interval limit
+//    from 7 days to 14 days, we only change it in this file. The validation logic
+//    and UI hint text update automatically everywhere.
+// 2. Eliminates "Magic Numbers": Writing '10080' or '59' directly across multiple
+//    files is error-prone. Giving values descriptive names (e.g. maxIntervalMinutes)
+//    makes the code self-explanatory.
 // ============================================================================
 
 class AppConstants {
@@ -32,8 +21,18 @@ class AppConstants {
   // Application Identity
   static const String appName = 'Interval Reminder';
 
-  // Placeholder default interval values (to be expanded later)
-  static const int defaultIntervalMinutes = 60;
-  static const int minIntervalMinutes = 5;
-  static const int maxIntervalMinutes = 1440; // 24 hours
+  // ---------------------------------------------------------------------------
+  // INTERVAL CONSTRAINTS
+  // ---------------------------------------------------------------------------
+  // Default interval when opening the Add Reminder form
+  static const int defaultIntervalHours = 1;
+  static const int defaultIntervalMinutes = 0;
+
+  // The minimum interval allowed (1 minute)
+  static const int minIntervalMinutes = 1;
+
+  // The maximum interval allowed for a repeating reminder (7 days)
+  static const int maxIntervalDays = 7;
+  static const int maxIntervalHours = maxIntervalDays * 24; // 168 hours
+  static const int maxIntervalMinutes = maxIntervalHours * 60; // 10,080 minutes
 }

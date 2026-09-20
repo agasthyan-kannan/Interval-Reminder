@@ -2,97 +2,90 @@
 // FILE: lib/features/reminders/presentation/screens/add_reminder_screen.dart
 //
 // WHAT THIS FILE DOES:
-// This screen allows the user to enter information to create a new reminder:
-// - Title (required)
-// - Description (optional, multi-line)
-// - Interval in hours and minutes (must be greater than 0)
-// - Start time (selected via Flutter's built-in showTimePicker)
+// This screen handles both CREATING a new reminder and EDITING an existing reminder:
+// - If 'reminderToEdit == null': CREATE MODE ("Add Reminder", empty form).
+// - If 'reminderToEdit != null': EDIT MODE ("Edit Reminder", pre-populated form).
 //
-// WHY A StatefulWidget IS USED HERE:
-// In Flutter, widgets are divided into two main categories:
-// 1. StatelessWidget: The UI never changes based on internal user interaction.
-// 2. StatefulWidget: The screen contains mutable data (state) that can change
-//    over time while the user interacts with it (e.g. typing text, picking a time).
+// WHY REUSING A SINGLE SCREEN IS BETTER THAN CREATING TWO SCREENS:
+// 1. Code Reusability: 95% of the UI (TextFormFields, validation logic, time picker)
+//    is identical between creating and editing.
+// 2. Maintainability: If we add a new field (like sound selection) in the future,
+//    we only update it in this one file rather than maintaining two duplicate screens!
 //
-// When the user picks a new time or types into inputs, the widget holds that
-// temporary state, and calls setState() to refresh the UI on screen.
+// WHY PRESERVING THE ID IS CRUCIAL IN EDIT MODE:
+// When editing, we MUST retain the existing reminder.id!
+// The notification ID is derived from the reminder's ID:
+// reminder.id -> notificationId (31-bit integer).
+// If we generated a new ID when editing, the old notification alarm would be
+// orphaned in the Android system and could never be cancelled!
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../domain/entities/reminder.dart';
 
 class AddReminderScreen extends StatefulWidget {
-  const AddReminderScreen({super.key});
+  // Optional reminder passed when opening in Edit mode
+  final Reminder? reminderToEdit;
 
-  // createState() is required for every StatefulWidget.
-  // It creates the companion State object (_AddReminderScreenState)
-  // that holds the mutable data and the build() logic.
+  const AddReminderScreen({
+    super.key,
+    this.reminderToEdit,
+  });
+
   @override
   State<AddReminderScreen> createState() => _AddReminderScreenState();
 }
 
-// WHAT IS A State CLASS?
-// The State class represents the logic and internal data for a StatefulWidget.
-// Unlike the widget itself (which Flutter can destroy and recreate frequently),
-// the State object persists across rebuilds, keeping user inputs intact.
 class _AddReminderScreenState extends State<AddReminderScreen> {
-  // ---------------------------------------------------------------------------
-  // GLOBAL KEY FOR FORM VALIDATION
-  // ---------------------------------------------------------------------------
-  // WHAT IS GlobalKey<FormState>?
-  // A GlobalKey uniquely identifies the Form widget in Flutter's widget tree.
-  // It gives us access to the FormState methods from outside the Form, such as:
-  // - _formKey.currentState!.validate(): runs the validator functions of all
-  //   TextFormField children.
-  // - _formKey.currentState!.save(): saves the values of all fields.
   final _formKey = GlobalKey<FormState>();
 
-  // ---------------------------------------------------------------------------
-  // TEXT EDITING CONTROLLERS
-  // ---------------------------------------------------------------------------
-  // WHAT IS A TextEditingController?
-  // A TextEditingController listens to and controls the text being edited
-  // in a TextFormField or TextField.
-  //
-  // WHY IT IS USEFUL:
-  // 1. You can read the current text at any time using: controller.text
-  // 2. You can set initial or updated text programmatically.
-  // 3. You can listen for changes as the user types.
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _hoursController;
   late final TextEditingController _minutesController;
 
-  // ---------------------------------------------------------------------------
-  // SCREEN STATE
-  // ---------------------------------------------------------------------------
-  // TimeOfDay represents a clock time (hour and minute) without a specific date.
-  // We initialize it to the current time when the screen opens.
-  TimeOfDay _selectedTime = TimeOfDay.now();
+  late TimeOfDay _selectedTime;
 
-  // initState() is called exactly once when this State object is first created.
-  // It is the ideal place to initialize controllers and load starting values.
+  // Convenience getter to check current mode
+  bool get _isEditMode => widget.reminderToEdit != null;
+
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController();
-    _descriptionController = TextEditingController();
 
-    // Set default interval values: 1 hour 0 minutes
-    _hoursController = TextEditingController(text: '1');
-    _minutesController = TextEditingController(text: '0');
+    final existing = widget.reminderToEdit;
+
+    // Pre-populate fields if editing; otherwise use default starting values
+    if (existing != null) {
+      _titleController = TextEditingController(text: existing.title);
+      _descriptionController =
+          TextEditingController(text: existing.description ?? '');
+
+      final int hours = existing.interval.inHours;
+      final int minutes = existing.interval.inMinutes % 60;
+      _hoursController = TextEditingController(text: hours.toString());
+      _minutesController = TextEditingController(text: minutes.toString());
+
+      _selectedTime = TimeOfDay(
+        hour: existing.startTime.hour,
+        minute: existing.startTime.minute,
+      );
+    } else {
+      _titleController = TextEditingController();
+      _descriptionController = TextEditingController();
+
+      _hoursController = TextEditingController(
+        text: AppConstants.defaultIntervalHours.toString(),
+      );
+      _minutesController = TextEditingController(
+        text: AppConstants.defaultIntervalMinutes.toString(),
+      );
+
+      _selectedTime = TimeOfDay.now();
+    }
   }
 
-  // ---------------------------------------------------------------------------
-  // DISPOSE: PREVENTING MEMORY LEAKS
-  // ---------------------------------------------------------------------------
-  // WHY dispose() IS NECESSARY:
-  // TextEditingControllers allocate resources and register listeners in Flutter's
-  // engine. If you do not dispose them when this screen is closed (popped),
-  // those resources stay in memory, causing a "memory leak".
-  //
-  // dispose() is called automatically by Flutter when this screen is permanently
-  // removed from the widget tree.
   @override
   void dispose() {
     _titleController.dispose();
@@ -102,56 +95,32 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // TIME PICKER DIALOG
-  // ---------------------------------------------------------------------------
-  // WHAT showTimePicker() DOES:
-  // showTimePicker is a built-in Flutter function that displays a Material Design
-  // clock dialog allowing the user to select an hour and minute.
-  //
-  // It returns a Future<TimeOfDay?>, which resolves when the user taps "OK"
-  // (returning the selected TimeOfDay) or "Cancel" (returning null).
+  // Opens Flutter's built-in time picker
   Future<void> _pickTime() async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _selectedTime,
     );
 
-    // If the user picked a time (didn't cancel) and it's different from the current one:
     if (picked != null && picked != _selectedTime) {
-      // WHY setState() IS NECESSARY:
-      // In a StatefulWidget, simply changing a variable (_selectedTime = picked)
-      // will NOT update what is shown on the screen!
-      //
-      // Calling setState() notifies Flutter: "My internal data has changed! Please
-      // call build() again to repaint the screen with the new values."
       setState(() {
         _selectedTime = picked;
       });
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // SAVE REMINDER ACTION
-  // ---------------------------------------------------------------------------
+  // Validates form inputs and creates/updates the Reminder object
   void _saveReminder() {
-    // WHAT _formKey.currentState!.validate() DOES:
-    // It triggers the 'validator' callback on every TextFormField inside the Form.
-    // - If any validator returns an error String, validate() returns false,
-    //   and the error messages automatically appear in red under the invalid fields.
-    // - If all validators return null, validate() returns true!
+    // 1. Validate form fields
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    // Safely parse numeric input for interval hours and minutes.
-    // int.tryParse() safely returns null instead of crashing if the input is invalid.
     final int hours = int.tryParse(_hoursController.text.trim()) ?? 0;
     final int minutes = int.tryParse(_minutesController.text.trim()) ?? 0;
-
-    // INTERVAL VALIDATION:
-    // The combined interval must be strictly greater than 0 minutes.
     final Duration interval = Duration(hours: hours, minutes: minutes);
+
+    // 2. Validate total interval duration
     if (interval.inMinutes <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -162,7 +131,20 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       return;
     }
 
-    // Combine today's calendar date with the chosen TimeOfDay to form a DateTime.
+    // 3. Validate against maximum allowed interval (7 days)
+    if (interval.inMinutes > AppConstants.maxIntervalMinutes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Interval cannot exceed ${AppConstants.maxIntervalDays} days.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // 4. Combine today's date with selected time
     final DateTime now = DateTime.now();
     final DateTime startDateTime = DateTime(
       now.year,
@@ -172,65 +154,57 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
       _selectedTime.minute,
     );
 
-    // CREATE THE REMINDER OBJECT:
-    // We use the immutable Reminder model created in Step 3.
-    final Reminder newReminder = Reminder(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      title: _titleController.text.trim(),
-      description: _descriptionController.text.trim().isEmpty
-          ? null
-          : _descriptionController.text.trim(),
-      interval: interval,
-      isEnabled: true,
-      startTime: startDateTime,
-    );
+    // 5. Construct updated or new Reminder object
+    final Reminder reminderResult;
+    if (_isEditMode) {
+      // In EDIT MODE:
+      // - Keep the original ID!
+      // - Keep the original isEnabled state!
+      reminderResult = widget.reminderToEdit!.copyWith(
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        interval: interval,
+        startTime: startDateTime,
+      );
+    } else {
+      // In CREATE MODE:
+      // - Generate a brand new unique ID
+      // - Defaults to enabled (true)
+      reminderResult = Reminder(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        interval: interval,
+        isEnabled: true,
+        startTime: startDateTime,
+      );
+    }
 
-    // DEBUG OUTPUT:
-    // Print the created reminder to the debug console as requested for Step 4.
-    debugPrint('==============================================');
-    debugPrint('Reminder created successfully:');
-    debugPrint('ID:          ${newReminder.id}');
-    debugPrint('Title:       ${newReminder.title}');
-    debugPrint('Description: ${newReminder.description ?? "(none)"}');
-    debugPrint('Interval:    ${newReminder.interval.inHours}h ${newReminder.interval.inMinutes % 60}m');
-    debugPrint('Start Time:  ${_selectedTime.format(context)} ($startDateTime)');
-    debugPrint('Enabled:     ${newReminder.isEnabled}');
-    debugPrint('==============================================');
-
-    // WHAT Navigator.pop() DOES:
-    // Flutter manages screens using a stack of routes (like a stack of playing cards).
-    // Navigator.pop(context) removes the top screen from the stack and returns
-    // the user to the previous screen (the Home screen).
-    Navigator.pop(context);
+    // Return the reminder to HomeScreen
+    Navigator.pop<Reminder>(context, reminderResult);
   }
 
-  // ---------------------------------------------------------------------------
-  // BUILD METHOD: CREATING THE UI
-  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Reminder'),
+        // Dynamic title based on mode
+        title: Text(_isEditMode ? 'Edit Reminder' : 'Add Reminder'),
       ),
-      // SingleChildScrollView ensures that when the on-screen keyboard appears,
-      // the user can scroll down and the UI will not overflow.
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        // WHAT Form DOES:
-        // Form is a container widget that groups multiple FormFields together
-        // and enables unified validation via a GlobalKey.
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ---------------------------------------------------------------
-              // 1. REMINDER TITLE
+              // 1. TITLE FIELD
               // ---------------------------------------------------------------
-              // WHAT TextFormField DOES:
-              // TextFormField combines a TextField with Form integration.
-              // It includes a 'validator' callback to check user input.
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(
@@ -238,10 +212,6 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                   hintText: 'e.g., Drink Water',
                   border: OutlineInputBorder(),
                 ),
-                // WHAT validator DOES:
-                // The validator function receives the current text value.
-                // - Returning a String displays that error message in red.
-                // - Returning null tells Flutter the input is completely valid!
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter a reminder title.';
@@ -252,7 +222,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
               const SizedBox(height: 16),
 
               // ---------------------------------------------------------------
-              // 2. DESCRIPTION (OPTIONAL)
+              // 2. DESCRIPTION FIELD (OPTIONAL)
               // ---------------------------------------------------------------
               TextFormField(
                 controller: _descriptionController,
@@ -267,7 +237,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
               const SizedBox(height: 24),
 
               // ---------------------------------------------------------------
-              // 3. INTERVAL (HOURS & MINUTES)
+              // 3. INTERVAL FIELDS (HOURS & MINUTES)
               // ---------------------------------------------------------------
               Text(
                 'Reminder Interval',
@@ -277,6 +247,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
               ),
               const SizedBox(height: 8),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Hours input
                   Expanded(
@@ -293,14 +264,19 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                         }
                         final parsed = int.tryParse(value.trim());
                         if (parsed == null || parsed < 0) {
-                          return 'Invalid number';
+                          return 'Hours must be 0 or greater';
                         }
                         return null;
                       },
                     ),
                   ),
                   const SizedBox(width: 16),
-                  // Minutes input
+
+                  // Minutes input (explicitly restricted to 0-59)
+                  // WHY EXPLICIT VALIDATION IS PREFERRED OVER SILENT CONVERSION:
+                  // If a user types '75', silently converting it to '1 hour 15 minutes'
+                  // hides mistakes (the user might have meant '7' or '5'). Explicit
+                  // validation educates the user and prevents unintended schedules.
                   Expanded(
                     child: TextFormField(
                       controller: _minutesController,
@@ -315,7 +291,7 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                         }
                         final parsed = int.tryParse(value.trim());
                         if (parsed == null || parsed < 0 || parsed > 59) {
-                          return '0 - 59 mins';
+                          return 'Minutes must be between 0 and 59';
                         }
                         return null;
                       },
@@ -335,7 +311,6 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
                     ),
               ),
               const SizedBox(height: 8),
-              // InkWell makes any widget clickable with a Material ripple effect.
               InkWell(
                 onTap: _pickTime,
                 borderRadius: BorderRadius.circular(8.0),
@@ -363,16 +338,19 @@ class _AddReminderScreenState extends State<AddReminderScreen> {
               const SizedBox(height: 32),
 
               // ---------------------------------------------------------------
-              // 5. SAVE BUTTON
+              // 5. SAVE / UPDATE BUTTON
               // ---------------------------------------------------------------
               ElevatedButton(
                 onPressed: _saveReminder,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16.0),
                 ),
-                child: const Text(
-                  'Save Reminder',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                child: Text(
+                  _isEditMode ? 'Save Changes' : 'Create Reminder',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],

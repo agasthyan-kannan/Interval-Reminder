@@ -2,38 +2,37 @@
 // FILE: lib/features/reminders/presentation/widgets/reminder_card.dart
 //
 // WHAT THIS FILE DOES:
-// This file defines the ReminderCard widget, a reusable UI component that
-// displays the details of a single Reminder (title, description, interval,
-// start time, enabled switch, and delete button).
+// This file defines the ReminderCard widget, which renders an individual
+// reminder card with:
+// - Title, description, formatted interval, and start time.
+// - An active/paused toggle Switch.
+// - An Edit IconButton.
+// - A Delete IconButton.
 //
-// WHY A SEPARATE REUSABLE WIDGET IS USEFUL:
-// 1. Single Responsibility: HomeScreen focuses on managing the list of reminders
-//    and navigation, while ReminderCard focuses purely on how an individual
-//    reminder card looks and behaves.
-// 2. Reusability: We can reuse ReminderCard anywhere reminders need to be displayed
-//    (e.g., in a future "Active Reminders" tab or search results) without duplicating code.
-// 3. Maintainability & Cleanliness: Small, focused widget files make our codebase
-//    much easier to read, debug, and test.
+// LIFTING STATE UP:
+// Notice that ReminderCard does NOT mutate the reminder directly.
+// Instead, it exposes callback functions:
+// - onToggle(bool)
+// - onEdit()
+// - onDelete()
+// This allows the parent (HomeScreen) to coordinate state updates, persistence,
+// and notification rescheduling in one central place!
 // ============================================================================
 
 import 'package:flutter/material.dart';
 import '../../domain/entities/reminder.dart';
 
 class ReminderCard extends StatelessWidget {
-  // The reminder data to display
   final Reminder reminder;
-
-  // CALLBACK FUNCTIONS:
-  // Instead of handling state mutation inside this widget, ReminderCard notifies
-  // its parent (HomeScreen) when the user wants to toggle or delete a reminder.
-  // This pattern is called "Lifting State Up" in Flutter!
   final ValueChanged<bool> onToggle;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const ReminderCard({
     super.key,
     required this.reminder,
     required this.onToggle,
+    required this.onEdit,
     required this.onDelete,
   });
 
@@ -63,7 +62,6 @@ class ReminderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Card provides a Material Design elevated surface with rounded corners.
     return Card(
       margin: const EdgeInsets.only(bottom: 12.0),
       elevation: 2,
@@ -75,10 +73,9 @@ class ReminderCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // TOP ROW: Title, Enabled Switch, and Delete Button
+            // TOP ROW: Status Icon, Title, Switch, Edit Button, Delete Button
             Row(
               children: [
-                // Icon indicating status
                 Icon(
                   reminder.isEnabled ? Icons.alarm_on : Icons.alarm_off,
                   color: reminder.isEnabled
@@ -93,7 +90,6 @@ class ReminderCard extends StatelessWidget {
                     reminder.title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
-                          // Dim title text slightly if disabled
                           color: reminder.isEnabled
                               ? null
                               : Theme.of(context).colorScheme.outline,
@@ -105,6 +101,13 @@ class ReminderCard extends StatelessWidget {
                 Switch(
                   value: reminder.isEnabled,
                   onChanged: onToggle,
+                ),
+
+                // Edit Button
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Edit reminder',
+                  onPressed: onEdit,
                 ),
 
                 // Delete Button
